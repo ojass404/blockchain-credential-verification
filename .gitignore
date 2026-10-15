@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Frontend build output
+dist/
+build/
+.vite/
+
+# Test output
+coverage/
+
+# Blockchain generated files
+artifacts/
+cache/
+typechain-types/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local databases and companion files
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Private certificate storage
+backend/uploads/
+backend/storage/
+
+# Local wallet material
+secrets/
+keystore/
+*.pem
+*.key
+
+# macOS files
+.DS_Store
+._*
+
+# Editor temporary files
+*.swp
+*.swo
+*~
