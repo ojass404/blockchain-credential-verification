@@ -52,4 +52,4 @@ keystore/
 # Editor temporary files
 *.swp
 *.swo
-*~
+*~/blockchain/types/
