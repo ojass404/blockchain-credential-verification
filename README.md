@@ -292,4 +292,6 @@ Installation, environment configuration, deployment, and application start comma
 
 ## Team
 
-Team member names and responsibilities will be added after confirmation.
+1) OJAS MAHAJAN
+2) NEET GUPTA
+3) BHAVYA KALLA
