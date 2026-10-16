@@ -1,297 +1,121 @@
 # Blockchain Credential Verification
 
-**Design Experience Project**
+Academic prototype for educational credential verification in India. The public React screen reads a local Solidity registry through Express and optionally compares the exact SHA-256 of an uploaded PDF. No verifier account or wallet is required. This project has no government or university endorsement.
 
-Design and Implementation of a Blockchain Enabled Framework for Secure Educational Credentials in India.
+## Implemented
 
-## Overview
+- Administrator approval of institution wallets; approved-wallet issuance; issuer/administrator revocation.
+- Public lookup and PDF comparison with independent registry status and file integrity results.
+- Reproducible local deployment with generated ABI/configuration and detection of node resets or missing contracts.
+- Synthetic PDF issuance and lifecycle demonstration, backend tests, and responsive React/Vite UI.
 
-A web prototype that allows approved educational institutions to issue digital credentials, students to access their certificates, and employers to verify certificate authenticity.
+Authentication, SQLite/private metadata, student downloads, institution/admin UI, wallet integration, QR generation, and transaction-history UI remain planned. No team contributions are inferred from this implementation.
 
-The system registers the SHA-256 hash of a finalized certificate PDF on a blockchain. Verification compares an uploaded PDF against the registered hash and checks whether the credential has been revoked.
+## Requirements and installation
 
-**Current status:** Repository structure created. Application implementation has not started.
+Verified on macOS with Node.js 24.16.0 and npm 11.13.0. Hardhat 3 uses the repository lockfile; first compilation may need internet access to download Solidity 0.8.34. Run from the repository root:
 
-## Problem Statement
-
-Educational certificate verification often requires manual communication with the issuing institution. This can delay verification and make altered documents difficult to identify.
-
-This project explores a blockchain registry that records authorized issuance and revocation while keeping certificate files and personal information off-chain.
-
-## Objectives
-
-- Allow an administrator to authorize institution wallets.
-- Enable approved institutions to register certificate hashes.
-- Verify the integrity of an uploaded certificate PDF.
-- Provide public credential status verification.
-- Allow the original issuer or administrator to revoke credentials.
-- Give students access to their own certificates.
-- Generate QR links to credential verification pages.
-- Display issuance and revocation transaction references.
-
-## Core Demonstration
-
-1. Administrator approves an institution wallet.
-2. Institution uploads a finalized certificate PDF.
-3. Institution signs the issuance transaction.
-4. Verifier uploads the original PDF and receives a matching result.
-5. Verifier uploads an edited PDF and receives a file mismatch result.
-6. Institution revokes the original credential.
-7. Verification displays the revoked status.
-
-Synthetic student records will be used for development and demonstrations.
-
-## Planned Features
-
-| Feature | Description | Status |
-| --- | --- | --- |
-| Institution authorization | Administrator approves institution wallets | Planned |
-| Certificate issuance | Register a finalized PDF hash on-chain | Planned |
-| Public verification | Look up a credential using its ID | Planned |
-| PDF integrity verification | Compare uploaded PDF bytes with the registered hash | Planned |
-| Revocation | Invalidate a credential while preserving its record | Planned |
-| Student access | View and download owned certificates | Planned |
-| QR verification | Open a credential status page using a QR code | Planned |
-| Transaction history | Display issuance and revocation references | Planned |
-
-## Planned Technology Stack
-
-| Layer | Technology | Purpose |
-| --- | --- | --- |
-| Frontend | React with Vite | User interface |
-| Backend | Node.js with Express | Authentication, APIs, and file handling |
-| Database | SQLite | Private metadata and user records |
-| Smart contract | Solidity | Institution authorization and credential registry |
-| Blockchain development | Hardhat | Local deployment and contract testing |
-| Wallet | MetaMask | Administrator and institution transaction signing |
-| Contract interaction | ethers.js | Connect application and blockchain |
-| Hashing | SHA-256 | Verify exact PDF integrity |
-| QR generation | qrcode | Generate verification links |
-
-Compatible dependency versions will be selected and pinned during implementation.
-
-## User Roles
-
-| Role | Permissions |
-| --- | --- |
-| Administrator | Approve or disable institution wallets and revoke credentials |
-| Institution | Issue credentials when approved and revoke its own credentials |
-| Student | View and download their own certificates |
-| Public verifier | Check credential status and PDF integrity without an account or wallet |
-
-## Planned Architecture
-
-The frontend communicates with the backend for authentication, private metadata, and certificate downloads.
-
-Administrator and institution wallets sign blockchain transactions. Verification reads the registered credential and optionally compares an uploaded PDF's hash.
-
-| On-chain data | Off-chain data |
-| --- | --- |
-| Opaque credential ID | User accounts |
-| Certificate PDF hash | Student details |
-| Issuer wallet address | Institution metadata |
-| Issuance timestamp | Certificate PDFs |
-| Revocation status | File ownership and transaction references |
-
-Student names, marks, passwords, and certificate PDFs will not be stored on-chain.
-
-## Project Structure
-
-```text
-blockchain-credential-verification/
-├── README.md
-├── DESCRIPTION.txt
-├── .gitignore
-├── frontend/
-│   └── src/
-├── backend/
-│   └── src/
-├── blockchain/
-│   ├── contracts/
-│   ├── scripts/
-│   └── test/
-└── docs/
-    ├── architecture/
-    ├── meetings/
-    ├── progress/
-    └── testing/
+```sh
+npm ci --prefix blockchain
+npm ci --prefix backend
+npm ci --prefix frontend
 ```
 
-Empty folders contain `.gitkeep` files so Git can track them.
+An existing `backend/.env` is preserved. It is optional; only `PORT` (default 3001) is used. Legacy `RPC_URL`, `CHAIN_ID`, and `REGISTRY_ADDRESS` are ignored to prevent stale copied addresses from overriding the deployment artifact.
 
-### Folder Responsibilities
+## Startup order
 
-| Folder | Purpose |
-| --- | --- |
-| frontend/src | Interface components, pages, styles, and client logic |
-| backend/src | APIs, authentication, database access, and file handling |
-| blockchain/contracts | Solidity smart contracts |
-| blockchain/scripts | Deployment and contract interaction scripts |
-| blockchain/test | Smart contract tests |
-| docs/architecture | Architecture, schema, workflows, and design decisions |
-| docs/meetings | Meeting records, responsibilities, and integration decisions |
-| docs/progress | Iteration summaries and contribution records |
-| docs/testing | Test cases, results, and demonstration evidence |
+Use separate terminals for the long-running processes. Before starting another process, inspect existing listeners with `lsof -nP -iTCP:8545 -iTCP:3001 -iTCP:5173 -sTCP:LISTEN`. Do not stop a running node merely to resolve a port conflict.
 
-## Interface Design
+1. Start a local node **only if one is not already running**:
 
-The interface will follow a minimal academic records portal style:
+   ```sh
+   cd blockchain
+   npx hardhat node --hostname 127.0.0.1
+   ```
 
-- Neutral backgrounds and dark readable text.
-- One muted blue accent.
-- Consistent typography and spacing.
-- Clearly labelled forms.
-- Compact tables.
-- Explicit status text alongside colours.
-- Simple navigation and limited animation.
+2. From the repository root, deploy a fresh local registry:
 
-Planned screens:
+   ```sh
+   npm run deploy:local --prefix backend
+   ```
 
-1. Public verification.
-2. Institution dashboard.
-3. Administrator dashboard.
-4. Student dashboard.
+   This compiles the contract and uses the Hardhat node's unlocked account, without storing keys. It writes `.local/deployment.json` atomically, recording RPC URL, chain ID, address, ABI, bytecode hash, deployment receipt identity, and Hardhat instance ID. **This ignored artifact is the sole blockchain configuration source.** The script only targets loopback port 8545, chain 31337, and requires Hardhat metadata.
 
-## Verification Behaviour
+3. Start the backend:
 
-| Condition | Result |
-| --- | --- |
-| Credential ID does not exist | Not found |
-| Uploaded PDF hash differs | File mismatch |
-| Credential is revoked | Revoked |
-| Credential is active and uploaded PDF matches | Valid and matching |
-| Blockchain cannot be reached | Verification unavailable |
+   ```sh
+   npm start --prefix backend
+   ```
 
-Revocation and file integrity will be displayed separately when both apply.
+   API: `http://127.0.0.1:3001`. `npm run dev --prefix backend` enables watching. Health checks report process health, not blockchain readiness.
 
-A credential lookup without a PDF only checks the registered credential's status.
+4. Issue synthetic PDFs and execute the real API lifecycle:
 
-## Important Design Rules
+   ```sh
+   npm run demo:pdf --prefix backend
+   ```
 
-- Only approved institution wallets may issue credentials.
-- An existing credential ID cannot be registered again.
-- Empty document hashes must be rejected.
-- Only the original issuer or administrator may revoke a credential.
-- Revocation must preserve the original record.
-- Disabling an institution stops future issuance without automatically revoking historical credentials.
-- Issuance must be confirmed on-chain before being marked complete.
-- Cancelled or failed transactions must not appear as successful issuance.
-- Student downloads must enforce ownership on the backend.
-- PDFs must be finalized before hashing.
-- An embedded QR code must be added before the final PDF hash is calculated.
+   The script creates valid original/edited PDFs with visibly different qualifications, hashes the finalized original bytes, approves a local institution, and issues two credentials. It checks active/matching, active/mismatching, revoked/matching, and revoked/mismatching through HTTP. One additional credential stays active for interactive use. IDs and evidence are written to `.local/demo.json`; PDFs are in `.local/fixtures/`. Each run creates new IDs. No issuance API is exposed.
 
-## Scope and Limitations
+5. Start the frontend:
 
-- SHA-256 verification checks exact file bytes.
-- Re-exported or scanned PDFs may fail even when they look identical.
-- A QR code checks the linked credential status; it does not prove the surrounding PDF is unchanged.
-- A matching hash confirms that the file matches the registered version, not that every academic claim is true.
-- The initial prototype will run on a local blockchain.
-- IPFS and public testnet deployment may be added after the core workflow works.
-- DigiLocker integration, batch issuance, and notifications are outside the initial implementation.
-- This is an academic prototype, not a production credential service.
+   ```sh
+   npm run dev --prefix frontend
+   ```
 
-## Assessment Priorities
+   Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Paste either ID printed by the demo, then optionally select `.local/fixtures/original.pdf` or `.local/fixtures/edited.pdf`. Vite proxies `/api` to port 3001. If changing the API port, also update `frontend/vite.config.js` and the local demo script.
 
-| Rubric Criterion | Weight | Evidence |
-| --- | --- | --- |
-| System Design | 20% | Architecture, schema, workflows, and design decisions |
-| Prototype Development | 20% | Working issuance, verification, tamper detection, and revocation |
-| Teamwork and Participation | 15% | Task ownership, contributions, and meeting records |
-| Documentation | 15% | README, setup instructions, API and contract documentation |
-| Sub-Team Collaboration | 10% | Reviews, integration notes, and shared decisions |
-| Communication | 10% | Progress presentations, feedback, and demonstration script |
-| Quality of Work | 10% | Validation, access controls, useful errors, and test results |
+## API contract
 
-Evidence will be maintained throughout development.
+- `GET /api/health`: process liveness.
+- `POST /api/documents/hash`: multipart `document`; returns SHA-256 without claiming a blockchain check.
+- `GET /api/verify/:id`: registry lookup; `fileChecked: false`, `fileMatches: null`.
+- `POST /api/verify/:id`: multipart `document`; registry lookup and byte comparison.
 
-## Development Roadmap
+IDs must be `0x` plus 64 hexadecimal characters. Successful responses contain issuer, Unix issuance timestamp (string), chain ID, address, document hash, `status` (`active` or `revoked`), and independent `fileChecked`/`fileMatches`. Revoked files can still match. Unknown IDs return 404 with `status: not_found`; infrastructure/deployment failures return 503 and never masquerade as not found. Invalid input returns 400, oversized files 413, and rate limits 429.
 
-- [x] Create project directory structure.
-- [ ] Add initial repository documentation.
-- [ ] Initialize Git and create the GitHub repository.
-- [ ] Confirm team responsibilities.
-- [ ] Define architecture and database schema.
-- [ ] Prepare workflow diagrams and screen sketches.
-- [ ] Initialize frontend, backend, and blockchain tooling.
-- [ ] Implement and test the smart contract.
-- [ ] Implement authentication, file storage, and hashing.
-- [ ] Connect certificate issuance.
-- [ ] Implement public verification and tamper detection.
-- [ ] Add revocation, student access, and QR links.
-- [ ] Complete integration testing and demonstration evidence.
+Uploads are limited to one PDF of at most 5 MiB, checked for `.pdf` extension and `%PDF-` header, hashed in memory, and never written by the API. These are basic format checks, not full PDF parsing or malware scanning. Hashing permits 20 requests/minute/IP; verification permits 60. API results have `Cache-Control: no-store`. Loopback binding is intentional.
 
-## GitHub Workflow
+## Local reset and troubleshooting
 
-For each iteration:
+- `DEPLOYMENT_MISSING`: run `npm run deploy:local --prefix backend` after starting the node.
+- `DEPLOYMENT_STALE`: the node reset/restarted, bytecode changed, or the deployment transaction disappeared. Redeploy and rerun the PDF demo. Old IDs belong to the old registry and should not be reused. The API reloads the artifact for every request; redeployment needs no backend restart.
+- `CHAIN_MISMATCH`: restore the expected local chain 31337, then redeploy.
+- `BLOCKCHAIN_UNAVAILABLE`: inspect the backend log for the actual error and confirm the RPC on 8545 is reachable. ABI/call errors also fail closed as 503.
+- `EADDRINUSE`: identify the existing listener. A dev watcher may already have reloaded the backend; do not start a second copy.
+- Hash mismatch after scanning/re-exporting is expected: SHA-256 verifies exact bytes, not appearance or truth of academic claims.
+- Hardhat's local state is ephemeral. Do not fund development accounts on public networks. The scripts do not deploy publicly.
+- The historical `blockchain/scripts/demo-registry.ts` deploys a separate synthetic-text demo; it does not update the application's deployment artifact. Use `demo:pdf` for this app.
 
-1. Create an issue with an owner and completion conditions.
-2. Create a focused branch.
-3. Implement and verify the change.
-4. Update relevant documentation.
-5. Commit with a meaningful message.
-6. Open a pull request.
-7. Request a teammate review where practical.
-8. Merge and close the issue.
+## Validation
 
-Example branch names:
+```sh
+cd blockchain
+npx hardhat compile --force
+npx hardhat test
+npx tsc --noEmit
+cd ..
+npm test --prefix backend
+npm run build --prefix frontend
+# Requires a live local deployment; does not reset or stop the node:
+npm run test:failures --prefix backend
+# Requires the backend as well:
+npm run demo:pdf --prefix backend
+```
 
-- docs/system-design
-- feat/credential-registry
-- feat/certificate-issuance
-- feat/public-verification
-- fix/student-download-access
+`test:failures` runs an isolated HTTP server with temporary configurations and checks missing/stale artifacts, missing bytecode, ABI failure, and unreachable RPC. It does not modify the app's configuration. Unit tests additionally cover chain mismatch, limits, invalid inputs, unknown IDs, and rate limiting.
 
-Example commit messages:
+See [test evidence](docs/testing/2026-10-16-public-verification.md) and [system design](docs/architecture/system-design.md). Production build output is generated under `frontend/dist`; production hosting and reverse-proxy configuration are outside this local prototype.
 
-- docs: add project overview and roadmap
-- feat: implement credential registry
-- feat: add PDF hash verification
-- fix: enforce certificate download ownership
+## Repository and assessment evidence
 
-## Progress Records
+- `blockchain/`: Solidity registry and permission/lifecycle tests.
+- `backend/`: read-only API, local deployment/demo scripts, and HTTP tests.
+- `frontend/`: React public verification interface.
+- `docs/architecture/`: implemented design and planned boundaries (System Design, 20%).
+- `docs/testing/`: observed test results and integration evidence (Prototype, 20%; Quality, 10%).
+- README and reproducible demo support Documentation (15%) and Communication (10%).
+- Teamwork (15%) and Collaboration (10%) require actual participant records and reviews; no such activity is fabricated here.
 
-Each iteration should record:
-
-- Completed work.
-- Verification performed.
-- Remaining issues.
-- Contributor.
-- Related GitHub issue or pull request.
-
-## Planned Testing
-
-- Approved institution issuance.
-- Unauthorized wallet issuance rejection.
-- Duplicate credential ID rejection.
-- Original PDF verification.
-- Edited PDF mismatch.
-- Unknown credential lookup.
-- Credential revocation.
-- Unauthorized revocation rejection.
-- Student download ownership checks.
-- Cancelled wallet transactions.
-- Blockchain connection failure.
-- Actual verification response times.
-
-No tests have been run because implementation has not started.
-
-## Local Setup
-
-Only the directory structure and documentation are currently available.
-
-Installation, environment configuration, deployment, and application start commands will be documented as each component is implemented.
-
-## Configuration and Data Handling
-
-- Never commit private keys or wallet seed phrases.
-- Never commit passwords or real student records.
-- Keep uploaded PDFs and local databases out of Git.
-- Add `.env.example` files containing placeholders when configuration is defined.
-- Use synthetic data during demonstrations.
-
-## Team
-
-1) OJAS MAHAJAN
-2) NEET GUPTA
-3) BHAVYA KALLA
+Team listed in the original project: Ojas Mahajan, Neet Gupta, Bhavya Kalla. Individual ownership should be recorded by the team. Keep private PDFs, database files, wallet material, `.env`, and `.local/` out of Git. Work locally on focused branches; do not push, merge, or publish without authorization.
