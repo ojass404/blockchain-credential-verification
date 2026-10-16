@@ -9,7 +9,7 @@ Academic prototype for educational credential verification in India. The public 
 - Reproducible local deployment with generated ABI/configuration and detection of node resets or missing contracts.
 - Synthetic PDF issuance and lifecycle demonstration, backend tests, and responsive React/Vite UI.
 
-Authentication, SQLite/private metadata, student downloads, institution/admin UI, wallet integration, QR generation, and transaction-history UI remain planned. No team contributions are inferred from this implementation.
+SQLite-backed authentication, private PDF storage, student downloads, role dashboards, and browser-wallet ownership verification are implemented. QR generation, password recovery, MFA, and a full transaction-history UI remain planned. No team contributions are inferred from this implementation.
 
 ## Requirements and installation
 
@@ -21,7 +21,7 @@ npm ci --prefix backend
 npm ci --prefix frontend
 ```
 
-An existing `backend/.env` is preserved. It is optional; only `PORT` (default 3001) is used. Legacy `RPC_URL`, `CHAIN_ID`, and `REGISTRY_ADDRESS` are ignored to prevent stale copied addresses from overriding the deployment artifact.
+An existing `backend/.env` is preserved. It is optional. `PORT` defaults to 3001, `PUBLIC_ORIGIN` to `http://127.0.0.1:5173`, and `DATABASE_PATH` to `.local/accounts.sqlite`. `NODE_ENV=production` requires an explicit database path and HTTPS origin; seeded databases are refused. Legacy `RPC_URL`, `CHAIN_ID`, and `REGISTRY_ADDRESS` are ignored to prevent stale copied addresses from overriding the deployment artifact.
 
 ## Startup order
 
@@ -119,3 +119,45 @@ See [test evidence](docs/testing/2026-10-16-public-verification.md) and [system 
 - Teamwork (15%) and Collaboration (10%) require actual participant records and reviews; no such activity is fabricated here.
 
 Team listed in the original project: Ojas Mahajan, Neet Gupta, Bhavya Kalla. Individual ownership should be recorded by the team. Keep private PDFs, database files, wallet material, `.env`, and `.local/` out of Git. Work locally on focused branches; do not push, merge, or publish without authorization.
+
+
+## Accounts, private certificates and role dashboards
+
+Run once after deploying the local registry:
+
+```sh
+npm run seed:local --prefix backend
+```
+
+This creates **one administrator, two institutions (one operator each), and two students (one per institution)**, all synthetic. The five emails are `admin@demo.example`, `institution-a@demo.example`, `institution-b@demo.example`, `student-a@demo.example`, and `student-b@demo.example`. Every account gets a different random password, saved only in ignored `.local/seed-accounts.json` with owner-only permissions. Open that local file to sign in; passwords are not embedded in code, docs, or `.env`. The seed refuses production mode and custom database paths. Re-running it preserves existing accounts and passwords. The application refuses a marked seed database in production, even when explicitly configured.
+
+Open the **Account dashboard** tab at http://127.0.0.1:5173/ and sign in with an email/password from that file. There is no role selector during sign-in. The server loads role and institution membership from SQLite on every authenticated request.
+
+- **Administrator:** list institutions/accounts and records, create additional institutions and student/operator accounts, approve or disable institution wallets, and revoke credentials with the contract administrator wallet. The role dropdown in account creation assigns a new account's permissions; it is accessible only to an authenticated administrator.
+- **Institution:** see only its own students and certificates, upload a finalized private PDF, sign issuance, and revoke its own credentials. The server rejects a student ID from another institution before handling the upload. An institution cannot select another institution's wallet or change its membership.
+- **Student:** list and download only personally owned certificate PDFs. Changing an ID in the download URL does not grant access; other users' records return 404. Institution operators can access their institution's PDFs; administrators have access to all private records.
+
+### Wallet ownership and transaction signing
+
+Use a browser with an injected Ethereum wallet extension for administrative/institution transactions. The in-app browser supports login and viewing but may not have a wallet extension; it will explain this when you try to connect. Configure the wallet's local RPC as `http://127.0.0.1:8545`, chain ID **31337**. Use the relevant development account shown by your local Hardhat node: account 0 for the seeded administrator, account 1 for Institution A, and account 2 for Institution B. Use only disposable development wallets here; no private key is stored in the backend or repository.
+
+Click **Connect and verify wallet**. The server issues a random challenge bound to the current session, account, assigned address, application origin and chain ID. It expires after five minutes and is consumed on verification. An EIP-191 signature from the assigned wallet grants wallet verification for that session for 30 minutes. Signing another wallet, an old challenge or another session's challenge fails. Password authentication is still required; the wallet is additional proof for privileged blockchain actions.
+
+The backend prepares exact transaction calldata after checking the authenticated role, membership and wallet proof. Your wallet signs and sends it. The API validates the mined receipt, chain, deployment instance, sender, destination, calldata, zero value and successful execution before recording completion. The Solidity contract remains the authority for wallet approval, issuance and revocation permissions. There is no backend signing API or unlocked-account signing shortcut over HTTP.
+
+If wallet signing is cancelled or receipt confirmation fails, the dashboard retains a pending action. Use **Resume signing**, or supply an already-mined transaction hash and **Confirm receipt**. A pending private PDF is labelled pending, never active. Dashboard statuses reflect the last confirmed dashboard operation; use public verification for current live blockchain status after external transactions. Resetting/redeploying leaves old database records bound to their old registry/instance: they cannot be transacted against the new deployment. Approve institution wallets on the new registry using the administrator dashboard, then issue new credentials.
+
+### Security demonstration and tests
+
+With synthetic PDF fixtures already generated by `npm run demo:pdf --prefix backend`, run:
+
+```sh
+npm test --prefix backend
+npm run demo:accounts --prefix backend
+```
+
+The second command uses **local-only CLI signing**, not an HTTP bypass. It logs into the seeded accounts, proves wallet ownership, issues one synthetic document for each student, confirms transaction receipts, rejects cross-student downloads and cross-institution operations, and revokes Institution A's own credential. It also attempts cross-institution revocation directly on the contract and confirms rejection. Each run leaves two labelled synthetic certificate records for inspecting the dashboards.
+
+Sessions use random opaque cookies (HttpOnly, SameSite=Strict; Secure in production), with only their hashes stored in SQLite. Sessions expire after eight hours and logout invalidates the database record. Mutating authenticated routes require a session CSRF token; cross-origin mutations are rejected. Passwords use salted scrypt, and login/dashboard requests are rate limited. Private PDFs are stored as SQLite BLOBs, never served as static files. Public comparison uploads continue to be processed in memory without persistence.
+
+This remains a local prototype: password reset/change, MFA, account disablement, audit-log retention, database encryption/backups, pagination/storage quotas, production provisioning and deployment are not implemented. Development accounts and the demonstration database must never become production accounts. See [account-security test evidence](docs/testing/2026-10-16-accounts.md).

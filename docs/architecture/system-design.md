@@ -14,7 +14,7 @@ The PDF demo CLI uses a separate unlocked institution account after administrato
 
 On-chain records contain opaque bytes32 credential ID, bytes32 SHA-256 document hash, issuer address, issuance timestamp, existence flag, and revocation flag. Administrator approval controls future institution issuance. Disabling an institution does not revoke historical credentials; the original issuer or administrator can revoke. Revocation preserves all original fields.
 
-No student name, marks, PDF, password, or private metadata is placed on-chain. The API processes uploads in bounded memory and releases request references after completion/error; it does not persist uploads. Synthetic fixtures and deployment data live in ignored `.local/`. SQLite authentication/private metadata, protected certificate storage, and ownership-controlled student downloads remain planned, with no database currently connected.
+No student name, marks, PDF, password, or private metadata is placed on-chain. The public verification API processes uploads in bounded memory and releases request references after completion/error. Authenticated issuance stores private PDFs as SQLite BLOBs, with institution and student ownership attached before preparing a transaction. Synthetic fixtures and deployment data live in ignored `.local/`. SQLite now stores institutions, users, hashed passwords, sessions, pending/confirmed blockchain actions and privately owned certificates. Parameterized SQL and foreign keys enforce record relationships; all download routes additionally enforce the authenticated role and ownership.
 
 ## Verification semantics
 
@@ -24,4 +24,19 @@ Express validates IDs before reading uploads. Multer permits one file with a 5 M
 
 ## Remaining scope
 
-Institution/admin dashboards, browser wallet signing, authentication, SQLite, private metadata, student access, QR generation, transaction-history UI, public networks, production deployment, and institutional accreditation checks are not implemented. Local unlocked accounts and Hardhat metadata are intentional development dependencies, unsuitable for a production deployment. A production design needs explicit issuer onboarding, key custody, privacy/access controls, resource limits and transport security beyond this prototype.
+QR generation, full transaction-history UI, public networks, production deployment, password recovery/MFA and institutional accreditation checks are not implemented. Institution/admin/student dashboards, database authentication, private downloads and browser-wallet signing are now implemented. Local unlocked accounts and Hardhat metadata are intentional development dependencies, unsuitable for a production deployment. A production design needs explicit issuer onboarding, key custody, privacy/access controls, resource limits and transport security beyond this prototype.
+
+
+## Authentication and private application boundary
+
+`POST /api/auth/login` verifies salted scrypt passwords and issues a new random HttpOnly/SameSite=Strict cookie. SQLite stores the token hash, CSRF token, account reference and expiry. Every private request loads the account role and membership from the database; user-supplied roles are ignored. Mutations require a per-session CSRF header and enforce the configured Origin. Logout deletes the server session. `GET /api/auth/me` returns the authenticated account and request token. Public health, hashing and credential verification remain independent of login.
+
+An institution has one assigned wallet and may have multiple operator accounts/students. Account provisioning is administrator-only. Student download ownership checks use the account ID, not just shared institution membership. Institution downloads/issuance/revocation are scoped to the account's institution. Administrator access is explicitly broader. PDFs are BLOBs in an ignored owner-readable local database and cannot be accessed via guessed filesystem paths or static serving.
+
+Wallet proof is a single-use, five-minute challenge stored in the authenticated session. Its text binds origin, account ID, assigned wallet, local chain ID, nonce and expiry. Successful signature recovery must exactly match the database-assigned address. The proof expires after 30 minutes. It permits preparing transaction requests; it does not replace Solidity authorization. The frontend uses the browser's injected wallet to sign messages and send transactions. The backend never obtains a signer.
+
+Issuance checks institution membership before accepting the PDF, then verifies contract approval. A pending record contains the student, institution, exact PDF hash and bytes, registry and node instance. A pending action binds the user, wallet, destination and calldata. Receipt confirmation rechecks current wallet ownership, instance, transaction identity and successful chain execution, and reconciles the on-chain hash/status. Revocation checks both the application's ownership boundary and actual contract issuer; the contract independently rejects other institutions. Missing or rejected wallet transactions remain pending and can be resumed or reconciled with a mined transaction hash. Roles and action ownership also apply to recovery endpoints.
+
+The local seed CLI creates random demo passwords outside tracked configuration and marks the database as demo-only. Production mode rejects that database and requires explicit deployment configuration. Resetting the local blockchain does not erase private records; registry/instance binding prevents their accidental reuse in new chain state.
+
+Implementation references: [Node SQLite API](https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html) and [ethers wallet/signature APIs](https://docs.ethers.org/v6/getting-started/).
