@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { network } from "hardhat";
 
-const { ethers } = await network.connect();
+const { ethers } = await network.create();
 
 async function main() {
   const chain = await ethers.provider.getNetwork();
