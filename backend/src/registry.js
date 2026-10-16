@@ -1,111 +1,32 @@
-import { Router } from "express";
-import { rateLimit } from "express-rate-limit";
-import {
-  Contract,
-  FetchRequest,
-  JsonRpcProvider,
-  getAddress,
-} from "ethers";
+import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
+import { lookupCredential, Unavailable } from './deployment.js';
+import { upload, pdfHash } from './upload.js';
 
-const rpcUrl = process.env.RPC_URL;
-const address = process.env.REGISTRY_ADDRESS;
-const chainId = process.env.CHAIN_ID;
-
-if (!rpcUrl || !address || !chainId || !/^[0-9]+$/.test(chainId)) {
-  throw new Error(
-    "Configure RPC_URL, REGISTRY_ADDRESS, and numeric CHAIN_ID in .env.",
-  );
+export function createRegistryRouter(lookup = lookupCredential) {
+  const router = Router();
+  router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  router.use(rateLimit({ windowMs: 60000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Too many verification requests. Try again later.' } }));
+  router.param('id', (req, res, next, id) => {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(id)) return res.status(400).json({ error: 'Credential ID must be 0x followed by 64 hexadecimal characters.' });
+    next();
+  });
+  async function verify(req, res) {
+    let uploadedHash;
+    try {
+      if (req.method === 'POST') {
+        try { uploadedHash = pdfHash(req.file); }
+        catch (e) { return res.status(400).json({ error: e.message }); }
+      }
+      const c = await lookup(req.params.id);
+      if (!c.exists) return res.status(404).json({ credentialId: req.params.id, exists: false, status: 'not_found', blockchainChecked: true, fileChecked: false, fileMatches: null });
+      return res.json({ ...c, credentialId: req.params.id, status: c.revoked ? 'revoked' : 'active', blockchainChecked: true, fileChecked: Boolean(uploadedHash), fileMatches: uploadedHash ? uploadedHash.toLowerCase() === c.documentHash.toLowerCase() : null, registeredHash: c.documentHash, ...(uploadedHash ? { uploadedHash } : {}) });
+    } catch (error) {
+      console.error('Registry verification failed:', error.code ?? error.name, error.shortMessage ?? error.message);
+      return res.status(503).json({ error: error instanceof Unavailable ? error.message : 'Blockchain verification unavailable. Check the local Hardhat RPC and redeploy if needed.', code: error instanceof Unavailable ? error.code : 'BLOCKCHAIN_UNAVAILABLE', blockchainChecked: false, fileChecked: false, fileMatches: null });
+    } finally { delete req.file; }
+  }
+  router.get('/:id', verify);
+  router.post('/:id', upload.single('document'), verify);
+  return router;
 }
-
-const registryAddress = getAddress(address);
-const expectedChainId = BigInt(chainId);
-
-const rpcRequest = new FetchRequest(rpcUrl);
-rpcRequest.timeout = 5000;
-
-const provider = new JsonRpcProvider(rpcRequest);
-
-const registry = new Contract(
-  registryAddress,
-  [
-    "function getCredential(bytes32 credentialId) view returns (tuple(bytes32 documentHash, address issuer, uint256 issuedAt, bool exists, bool revoked))",
-  ],
-  provider,
-);
-
-export const registryRouter = Router();
-
-registryRouter.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    limit: 60,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    message: {
-      error: "Too many verification requests. Try again later.",
-    },
-  }),
-);
-
-registryRouter.get("/:id", async (request, response) => {
-  response.set("Cache-Control", "no-store");
-
-  const credentialId = request.params.id;
-
-  if (!/^0x[0-9a-fA-F]{64}$/.test(credentialId)) {
-    return response.status(400).json({
-      error: "Credential ID must be 0x followed by 64 hexadecimal characters.",
-    });
-  }
-
-  try {
-    const connectedNetwork = await provider.getNetwork();
-
-    if (connectedNetwork.chainId !== expectedChainId) {
-      throw new Error("Unexpected blockchain network.");
-    }
-
-    const code = await provider.getCode(registryAddress);
-
-    if (code === "0x") {
-      throw new Error("No contract at the configured registry address.");
-    }
-
-    const credential = await registry.getCredential(credentialId);
-
-    if (!credential.exists) {
-      return response.status(404).json({
-        credentialId,
-        exists: false,
-        status: "not_found",
-        blockchainChecked: true,
-        fileChecked: false,
-      });
-    }
-
-    return response.json({
-      credentialId,
-      exists: true,
-      status: credential.revoked ? "revoked" : "active",
-      revoked: credential.revoked,
-      issuer: credential.issuer,
-      issuedAt: credential.issuedAt.toString(),
-      documentHash: credential.documentHash,
-      chainId: connectedNetwork.chainId.toString(),
-      registryAddress,
-      blockchainChecked: true,
-      fileChecked: false,
-    });
-  } catch (error) {
-    console.error(
-      "Registry lookup failed:",
-      error.code ?? error.name ?? "UnknownError",
-    );
-
-    return response.status(503).json({
-      error: "Verification unavailable. Check the local node and registry configuration.",
-      blockchainChecked: false,
-      fileChecked: false,
-    });
-  }
-});
