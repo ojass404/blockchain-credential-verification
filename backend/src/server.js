@@ -4,6 +4,7 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { registryRouter } from "./registry.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
@@ -15,6 +16,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 app.disable("x-powered-by");
 app.use(helmet());
+app.use("/api/verify", registryRouter);
 
 const uploadLimiter = rateLimit({
   windowMs: 60 * 1000,
