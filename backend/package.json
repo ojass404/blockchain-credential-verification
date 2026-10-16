@@ -4,9 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --env-file=.env src/server.js",
-    "dev": "node --watch --env-file=.env src/server.js"
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "test": "node --test",
+    "deploy:local": "cd ../blockchain && npx hardhat compile && cd ../backend && node scripts/deploy-local.js",
+    "demo:pdf": "node scripts/demo-pdf.js",
+    "test:failures": "node scripts/check-failures.js",
+    "seed:local": "node scripts/seed-local.js --local",
+    "demo:accounts": "node scripts/demo-accounts.js"
   },
   "keywords": [],
   "author": "",
@@ -19,5 +24,8 @@
     "express-rate-limit": "8.7.1",
     "helmet": "8.3.0",
     "multer": "2.4.0"
+  },
+  "devDependencies": {
+    "pdf-lib": "1.17.1"
   }
 }

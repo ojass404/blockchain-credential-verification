@@ -53,3 +53,6 @@ keystore/
 *.swp
 *.swo
 *~/blockchain/types/
+
+# Generated local deployment and synthetic PDF demo files
+.local/
