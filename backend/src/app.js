@@ -6,8 +6,9 @@ import { createRegistryRouter } from './registry.js';
 import { upload, pdfHash } from './upload.js';
 import { database } from './database.js';
 import { accountRouter, originGuard, HttpError } from './accounts.js';
+import { fileVerificationRouter } from './file-verification.js';
 import { dashboardRouter } from './dashboard.js';
-export function createApp({ lookup, db = database() } = {}) {
+export function createApp({ lookup, findFile, db = database() } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -17,7 +18,8 @@ export function createApp({ lookup, db = database() } = {}) {
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'credential-verification-backend' }));
   app.use('/api/auth', accountRouter(db));
   app.use('/api/dashboard', dashboardRouter(db));
-  app.use('/api/verify', createRegistryRouter(lookup));
+  app.use('/api/verify-file', fileVerificationRouter(db, findFile));
+  app.use('/api/verify', createRegistryRouter(lookup, db));
   app.post('/api/documents/hash', rateLimit({ windowMs: 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Too many uploads. Try again later.' } }), upload.single('document'), (req, res) => {
     try { res.json({ algorithm: 'SHA-256', documentHash: pdfHash(req.file), sizeBytes: req.file.size, blockchainChecked: false }); }
     catch (e) { res.status(400).json({ error: e.message }); }

@@ -1,0 +1,4 @@
+import React from 'react';
+export function Brand() { return <a className="brand" href="/verify"><span className="brand-mark" aria-hidden="true">C</span><span>Credence<small>ACADEMIC RECORDS</small></span></a>; }
+export function PublicHeader() { return <header className="site-header"><Brand/><nav aria-label="Main navigation"><a className={location.pathname.includes('login')?'':'selected'} href="/verify">Verify a document</a><a href="/login/institution">Institution access</a><a href="/login/student">Student access</a></nav><span className="environment"><i/>Local prototype</span></header>; }
+export function Footer() { return <footer className="site-footer"><span>Credence · Educational credential registry</span><span>Academic prototype. No government or university endorsement.</span><a href="/login/administrator">Administrator access</a></footer>; }

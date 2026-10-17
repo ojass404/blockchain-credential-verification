@@ -38,6 +38,9 @@ export function openDatabase(file = process.env.DATABASE_PATH || fileURLToPath(n
       certificate_id TEXT REFERENCES certificates(id), wallet TEXT NOT NULL, registry TEXT NOT NULL, instance TEXT NOT NULL,
       data TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', tx_hash TEXT);
   `);
+  const columns = db.prepare('PRAGMA table_info(certificates)').all().map(c => c.name);
+  if (!columns.includes('course')) db.exec("ALTER TABLE certificates ADD COLUMN course TEXT NOT NULL DEFAULT ''");
+  db.exec('CREATE INDEX IF NOT EXISTS certificates_hash ON certificates(document_hash)');
   if (process.env.NODE_ENV === 'production' && db.prepare("SELECT value FROM settings WHERE key='local_seed'").get()) {
     db.close(); throw Error('A seeded demonstration database cannot be used in production.');
   }
