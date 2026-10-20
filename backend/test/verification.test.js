@@ -1,3 +1,7 @@
+let headers;
+const fetch=(url,options={})=>globalThis.fetch(url,{...options,headers:{...headers,...options.headers}});
+import { openDatabase } from '../src/database.js';
+import { verifierSession } from './session-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -7,10 +11,11 @@ import { keccak256 } from 'ethers';
 const id = '0x' + '1'.repeat(64), bytes = Buffer.from('%PDF-1.4\nsynthetic test input');
 const hash = '0x' + createHash('sha256').update(bytes).digest('hex');
 async function serve(lookup, fn) {
-  const server = createApp({ lookup }).listen(0, '127.0.0.1');
+  const db=openDatabase(':memory:');headers=verifierSession(db);
+  const server = createApp({ lookup, db }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   try { await fn(`http://127.0.0.1:${server.address().port}`); }
-  finally { await new Promise(resolve => server.close(resolve)); }
+  finally { await new Promise(resolve => server.close(resolve)); db.close(); }
 }
 function upload(bytes, name = 'test.pdf', field = 'document') {
   const form = new FormData(); form.append(field, new Blob([bytes]), name); return { method: 'POST', body: form };

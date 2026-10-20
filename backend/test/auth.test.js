@@ -47,7 +47,7 @@ test('real sessions enforce roles, institution membership and private PDF owners
   assert.equal((await a.request('/auth/logout','POST',{})).status,200);
   assert.equal((await a.request('/auth/me')).status,401);
   db.prepare('UPDATE sessions SET expires=0').run(); assert.equal((await b.request('/auth/me')).status,401);
-  assert.equal((await fetch(base+'/verify/0x'+'1'.repeat(64))).status,404);
+  assert.equal((await fetch(base+'/verify/0x'+'1'.repeat(64))).status,401);
 }));
 test('wallet challenges bind assigned wallet, session, nonce and expiry; replay and role spoofing fail', async () => fixture(async ({login,wallets,db}) => {
   const a=await login(2), second=await login(2), student=await login(4);
@@ -96,3 +96,35 @@ test('bad credentials fail and seeded databases are refused in production', asyn
     await rm(dir,{recursive:true,force:true});
   }
 });
+
+test('verification requires login and verifier has no private dashboard permissions',async()=>fixture(async({base,db})=>{
+  const password='synthetic-verifier-password';
+  db.prepare("INSERT INTO users(email,name,password_hash,role) VALUES(?,?,?,'verifier')").run('verifier@test.example','Verifier',await hashPassword(password));
+  for(const path of ['/verify/0x'+'1'.repeat(64),'/verify-file','/documents/hash'])assert.equal((await fetch(base+path,{method:path.includes('/verify/')?'GET':'POST'})).status,401);
+  const r=await fetch(base+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'verifier@test.example',password,portal:'verifier'})});assert.equal(r.status,200);
+  const cookie=r.headers.get('set-cookie').split(';')[0],{csrf}=await r.json();
+  assert.equal((await fetch(base+'/verify/0x'+'1'.repeat(64),{headers:{Cookie:cookie}})).status,404);
+  for(const path of ['/dashboard','/dashboard/certificates/cert-a/pdf'])assert.equal((await fetch(base+path,{headers:{Cookie:cookie}})).status,403);
+  assert.equal((await fetch(base+'/verify-file',{method:'POST',headers:{Cookie:cookie}})).status,403);
+  assert.equal((await fetch(base+'/auth/wallet/challenge',{method:'POST',headers:{Cookie:cookie,'X-CSRF-Token':csrf}})).status,403);
+}));
+
+test('institutions create only their own students, who can sign in without expanded access', async () => fixture(async ({login,db,base}) => {
+  const institution=await login(2);
+  const student={name:'New Campus Student',email:'campus-student@test.example',password};
+  assert.equal((await institution.request('/dashboard/users','POST',student,{'X-CSRF-Token':'invalid'})).status,403);
+  for(const role of ['administrator','institution','verifier'])assert.equal((await institution.request('/dashboard/users','POST',{...student,role})).status,403);
+  assert.equal((await institution.request('/dashboard/users','POST',{...student,institutionId:2})).status,403);
+  assert.equal((await institution.request('/dashboard/users','POST',{...student,password:'short'})).status,400);
+  assert.equal((await institution.request('/dashboard/users','POST',student)).status,201);
+  const row=db.prepare('SELECT * FROM users WHERE email=?').get(student.email);
+  assert.equal(row.role,'student');assert.equal(row.institution_id,1);assert.notEqual(row.password_hash,password);
+  assert.equal((await institution.request('/dashboard/users','POST',student)).status,409);
+  const other=await login(3), otherDashboard=await(await other.request('/dashboard')).json();
+  assert.ok(!otherDashboard.users.some(u=>u.id===row.id));
+  const ownDashboard=await(await institution.request('/dashboard')).json();assert.ok(ownDashboard.users.some(u=>u.id===row.id));
+  const response=await fetch(base+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...student,portal:'student'})});assert.equal(response.status,200);
+  const {csrf}=await response.json(),headers={Cookie:response.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':csrf,'Content-Type':'application/json'};
+  assert.equal((await fetch(base+'/dashboard/users',{method:'POST',headers,body:JSON.stringify({...student,email:'forbidden@test.example'})})).status,403);
+  assert.equal((await fetch(base+'/dashboard/certificates/cert-a/pdf',{headers})).status,404);
+}));

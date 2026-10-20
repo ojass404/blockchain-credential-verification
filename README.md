@@ -1,6 +1,6 @@
 # Blockchain Credential Verification
 
-Academic prototype for educational credential verification in India. The public React screen reads a local Solidity registry through Express and optionally compares the exact SHA-256 of an uploaded PDF. No verifier account or wallet is required. This project has no government or university endorsement.
+Academic prototype for educational credential verification in India. The public React screen reads a local Solidity registry through Express and automatically looks up the exact SHA-256 of an uploaded PDF. Verification now requires an authenticated account; no wallet is required. This project has no government or university endorsement.
 
 ## Implemented
 
@@ -9,7 +9,7 @@ Academic prototype for educational credential verification in India. The public 
 - Reproducible local deployment with generated ABI/configuration and detection of node resets or missing contracts.
 - Synthetic PDF issuance and lifecycle demonstration, backend tests, and responsive React/Vite UI.
 
-SQLite-backed authentication, private PDF storage, student downloads, role dashboards, and browser-wallet ownership verification are implemented. QR generation, password recovery, MFA, and a full transaction-history UI remain planned. No team contributions are inferred from this implementation.
+SQLite-backed authentication, private PDF storage, student downloads, role dashboards, and browser-wallet ownership verification are implemented. QR sharing and transaction history are implemented. Password recovery and MFA remain planned. No team contributions are inferred from this implementation.
 
 ## Requirements and installation
 
@@ -45,18 +45,18 @@ Use separate terminals for the long-running processes. Before starting another p
 3. Start the backend:
 
    ```sh
-   npm start --prefix backend
+   LOCAL_MANAGED_SIGNING=true npm start --prefix backend
    ```
 
    API: `http://127.0.0.1:3001`. `npm run dev --prefix backend` enables watching. Health checks report process health, not blockchain readiness.
 
-4. Issue synthetic PDFs and execute the real API lifecycle:
+4. Run `npm run seed:local --prefix backend` before the demos. Issue synthetic PDFs and execute the real API lifecycle:
 
    ```sh
    npm run demo:pdf --prefix backend
    ```
 
-   The script creates valid original/edited PDFs with visibly different qualifications, hashes the finalized original bytes, approves a local institution, and issues two credentials. It checks active/matching, active/mismatching, revoked/matching, and revoked/mismatching through HTTP. One additional credential stays active for interactive use. IDs and evidence are written to `.local/demo.json`; PDFs are in `.local/fixtures/`. Each run creates new IDs. No issuance API is exposed.
+   The script creates valid original/edited PDFs with visibly different qualifications, hashes the finalized original bytes, approves a local institution, and issues two credentials. It checks active/matching, active/mismatching, revoked/matching, and revoked/mismatching through HTTP. One additional credential stays active for interactive use. IDs and evidence are written to `.local/demo.json`; PDFs are in `.local/fixtures/`. Each run creates new IDs. Authenticated issuance is available in the institution portal.
 
 5. Start the frontend:
 
@@ -64,10 +64,11 @@ Use separate terminals for the long-running processes. Before starting another p
    npm run dev --prefix frontend
    ```
 
-   Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Paste either ID printed by the demo, then optionally select `.local/fixtures/original.pdf` or `.local/fixtures/edited.pdf`. Vite proxies `/api` to port 3001. If changing the API port, also update `frontend/vite.config.js` and the local demo script.
+   Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Choose a PDF to verify it automatically; no credential ID is requested. To register your own PDF first, seed accounts below and use the institution portal. Vite proxies `/api` to port 3001. If changing the API port, also update `frontend/vite.config.js` and the local demo script.
 
 ## API contract
 
+- `POST /api/verify-file`: multipart `document`; finds matching on-chain issuance events, checks current revocation status, and returns `valid`, `revoked`, or `unregistered`. Infrastructure failures return 503. Login is required; no ID is required.
 - `GET /api/health`: process liveness.
 - `POST /api/documents/hash`: multipart `document`; returns SHA-256 without claiming a blockchain check.
 - `GET /api/verify/:id`: registry lookup; `fileChecked: false`, `fileMatches: null`.
@@ -75,7 +76,7 @@ Use separate terminals for the long-running processes. Before starting another p
 
 IDs must be `0x` plus 64 hexadecimal characters. Successful responses contain issuer, Unix issuance timestamp (string), chain ID, address, document hash, `status` (`active` or `revoked`), and independent `fileChecked`/`fileMatches`. Revoked files can still match. Unknown IDs return 404 with `status: not_found`; infrastructure/deployment failures return 503 and never masquerade as not found. Invalid input returns 400, oversized files 413, and rate limits 429.
 
-Uploads are limited to one PDF of at most 5 MiB, checked for `.pdf` extension and `%PDF-` header, hashed in memory, and never written by the API. These are basic format checks, not full PDF parsing or malware scanning. Hashing permits 20 requests/minute/IP; verification permits 60. API results have `Cache-Control: no-store`. Loopback binding is intentional.
+Uploads are limited to one PDF of at most 5 MiB, checked for `.pdf` extension and `%PDF-` header, hashed in memory, and never saved by public verification (authenticated issuance stores the private original). These are basic format checks, not full PDF parsing or malware scanning. Hashing permits 20 requests/minute/IP; ID verification permits 60; file-only verification permits 20. API results have `Cache-Control: no-store`. Loopback binding is intentional.
 
 ## Local reset and troubleshooting
 
@@ -111,7 +112,7 @@ See [test evidence](docs/testing/2026-10-16-public-verification.md) and [system 
 ## Repository and assessment evidence
 
 - `blockchain/`: Solidity registry and permission/lifecycle tests.
-- `backend/`: read-only API, local deployment/demo scripts, and HTTP tests.
+- `backend/`: authentication, issuance and verification API, local deployment/demo scripts, and HTTP tests.
 - `frontend/`: React public verification interface.
 - `docs/architecture/`: implemented design and planned boundaries (System Design, 20%).
 - `docs/testing/`: observed test results and integration evidence (Prototype, 20%; Quality, 10%).
@@ -131,21 +132,27 @@ npm run seed:local --prefix backend
 
 This creates **one administrator, two institutions (one operator each), and two students (one per institution)**, all synthetic. The five emails are `admin@demo.example`, `institution-a@demo.example`, `institution-b@demo.example`, `student-a@demo.example`, and `student-b@demo.example`. Every account gets a different random password, saved only in ignored `.local/seed-accounts.json` with owner-only permissions. Open that local file to sign in; passwords are not embedded in code, docs, or `.env`. The seed refuses production mode and custom database paths. Re-running it preserves existing accounts and passwords. The application refuses a marked seed database in production, even when explicitly configured.
 
-Open the **Account dashboard** tab at http://127.0.0.1:5173/ and sign in with an email/password from that file. There is no role selector during sign-in. The server loads role and institution membership from SQLite on every authenticated request.
+Open `/login/administrator`, `/login/institution`, or `/login/student` at http://127.0.0.1:5173 and sign in with an email/password from that file. The server validates that the account belongs to the selected portal. There is no role selector during sign-in. The server loads role and institution membership from SQLite on every authenticated request.
 
 - **Administrator:** list institutions/accounts and records, create additional institutions and student/operator accounts, approve or disable institution wallets, and revoke credentials with the contract administrator wallet. The role dropdown in account creation assigns a new account's permissions; it is accessible only to an authenticated administrator.
 - **Institution:** see only its own students and certificates, upload a finalized private PDF, sign issuance, and revoke its own credentials. The server rejects a student ID from another institution before handling the upload. An institution cannot select another institution's wallet or change its membership.
 - **Student:** list and download only personally owned certificate PDFs. Changing an ID in the download URL does not grant access; other users' records return 404. Institution operators can access their institution's PDFs; administrators have access to all private records.
 
-### Wallet ownership and transaction signing
+### Local signing and your own PDF
 
-Use a browser with an injected Ethereum wallet extension for administrative/institution transactions. The in-app browser supports login and viewing but may not have a wallet extension; it will explain this when you try to connect. Configure the wallet's local RPC as `http://127.0.0.1:8545`, chain ID **31337**. Use the relevant development account shown by your local Hardhat node: account 0 for the seeded administrator, account 1 for Institution A, and account 2 for Institution B. Use only disposable development wallets here; no private key is stored in the backend or repository.
+Set `LOCAL_MANAGED_SIGNING=true` in the backend environment (see `.env.example`) after running the local seed command. Institution and administrator operations then use their assigned unlocked Hardhat account through the authenticated backend. There is no extension installation, key entry or wallet connection step in the local UI. This is explicit local custody, not proof that the human possesses an external wallet. The server signs and recovers a fresh session-bound challenge with the assigned account, checks roles and ownership, and submits only previously authorized stored actions. The smart contract still enforces issuer approval and revocation permissions. This mode is disabled in production and for unseeded databases. Existing external-wallet challenge endpoints remain available for a future external-wallet client.
 
-Click **Connect and verify wallet**. The server issues a random challenge bound to the current session, account, assigned address, application origin and chain ID. It expires after five minutes and is consumed on verification. An EIP-191 signature from the assigned wallet grants wallet verification for that session for 30 minutes. Signing another wallet, an old challenge or another session's challenge fails. Password authentication is still required; the wallet is additional proof for privileged blockchain actions.
+1. Sign in at `/login/institution` and choose **Issue credential**.
+2. Select an enrolled student, enter a public certificate title and attach your finalized PDF (maximum 5 MiB).
+3. The SHA-256 fingerprint appears automatically. Click **Register credential** and wait for confirmed issuance.
+4. Open `/verify` and attach the same PDF. Verification runs automatically and displays institution, qualification, issue date, file integrity and live registry status.
+5. Students can download their exact original and share a QR/link. Institutions can revoke their own records; the public result then reports revocation.
 
-The backend prepares exact transaction calldata after checking the authenticated role, membership and wallet proof. Your wallet signs and sends it. The API validates the mined receipt, chain, deployment instance, sender, destination, calldata, zero value and successful execution before recording completion. The Solidity contract remains the authority for wallet approval, issuance and revocation permissions. There is no backend signing API or unlocked-account signing shortcut over HTTP.
+The backend validates transaction sender, destination, exact calldata, zero value, receipt success and deployment identity before marking an operation complete. Pending actions appear in Transaction history with Retry. Dashboard status is checked against the live registry; unavailable reads show a warning. Node resets archive records tied to the old deployment rather than silently reusing them.
 
-If wallet signing is cancelled or receipt confirmation fails, the dashboard retains a pending action. Use **Resume signing**, or supply an already-mined transaction hash and **Confirm receipt**. A pending private PDF is labelled pending, never active. Dashboard statuses reflect the last confirmed dashboard operation; use public verification for current live blockchain status after external transactions. Resetting/redeploying leaves old database records bound to their old registry/instance: they cannot be transacted against the new deployment. Approve institution wallets on the new registry using the administrator dashboard, then issue new credentials.
+A file alone cannot distinguish an edited certificate from a never-issued document: both have no matching hash. A shared credential link supplies the original record context and can explicitly report a mismatch. When multiple issuance records share a hash, every match and its current status is shown. The prototype scans real issuance events; a production deployment needs a durable indexed event reader rather than scanning all history per upload.
+
+Run `npm run demo:upload-only --prefix backend` against the running seeded application to exercise issuance, exact match, edited file, revocation and QR sharing without a browser wallet. It creates synthetic files under `.local/upload-only-fixtures/` and leaves `active.pdf` ready to verify.
 
 ### Security demonstration and tests
 
@@ -156,8 +163,18 @@ npm test --prefix backend
 npm run demo:accounts --prefix backend
 ```
 
-The second command uses **local-only CLI signing**, not an HTTP bypass. It logs into the seeded accounts, proves wallet ownership, issues one synthetic document for each student, confirms transaction receipts, rejects cross-student downloads and cross-institution operations, and revokes Institution A's own credential. It also attempts cross-institution revocation directly on the contract and confirms rejection. Each run leaves two labelled synthetic certificate records for inspecting the dashboards.
+The second command uses **local-only CLI signing**, through the original external-wallet challenge flow. It logs into the seeded accounts, proves wallet ownership, issues one synthetic document for each student, confirms transaction receipts, rejects cross-student downloads and cross-institution operations, and revokes Institution A's own credential. It also attempts cross-institution revocation directly on the contract and confirms rejection. Each run leaves two labelled synthetic certificate records for inspecting the dashboards.
 
 Sessions use random opaque cookies (HttpOnly, SameSite=Strict; Secure in production), with only their hashes stored in SQLite. Sessions expire after eight hours and logout invalidates the database record. Mutating authenticated routes require a session CSRF token; cross-origin mutations are rejected. Passwords use salted scrypt, and login/dashboard requests are rate limited. Private PDFs are stored as SQLite BLOBs, never served as static files. Public comparison uploads continue to be processed in memory without persistence.
 
 This remains a local prototype: password reset/change, MFA, account disablement, audit-log retention, database encryption/backups, pagination/storage quotas, production provisioning and deployment are not implemented. Development accounts and the demonstration database must never become production accounts. See [account-security test evidence](docs/testing/2026-10-16-accounts.md).
+
+## Verification access update — 20 October 2026
+
+Verification now requires login, including both ID-based and PDF-only backend endpoints. `/verify` redirects anonymous visitors to `/login/verifier`. Any authenticated account can verify, while the verifier role has no private dashboard, PDF download, issuance, revocation or wallet access. Mutating verification requests require the session CSRF token. Shared QR links retain their record context across verifier login.
+
+The local administrator and first student credentials were updated in place, and a government verifier account was added. Their requested credentials and the unchanged institution/second-student credentials are stored only in ignored `.local/seed-accounts.json`; no passwords are committed. These local changes preserve existing IDs, memberships and certificate ownership. Production continues to reject the seeded database. Older test evidence describes the prior anonymous-verification behavior.
+
+## Institution student provisioning
+
+Institution operators can open **Students → Create a student account**, enter a name, email and initial password (12–256 characters), and create a student in their own institution. The backend derives the student role and institution from the authenticated operator, rejecting attempts to assign another institution or a privileged role. Students cannot create accounts. Duplicate emails are rejected; passwords are hashed. New students appear in the institution directory and issuance selector and can sign in through `/login/student`.

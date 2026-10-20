@@ -11,7 +11,8 @@
     "demo:pdf": "node scripts/demo-pdf.js",
     "test:failures": "node scripts/check-failures.js",
     "seed:local": "node scripts/seed-local.js --local",
-    "demo:accounts": "node scripts/demo-accounts.js"
+    "demo:accounts": "node scripts/demo-accounts.js",
+    "demo:upload-only": "node scripts/demo-upload-only.js"
   },
   "keywords": [],
   "author": "",
@@ -23,7 +24,8 @@
     "express": "5.3.0",
     "express-rate-limit": "8.7.1",
     "helmet": "8.3.0",
-    "multer": "2.4.0"
+    "multer": "2.4.0",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "pdf-lib": "1.17.1"

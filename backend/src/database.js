@@ -25,9 +25,9 @@ export function openDatabase(file = process.env.DATABASE_PATH || fileURLToPath(n
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS institutions (id INTEGER PRIMARY KEY, name TEXT NOT NULL, wallet TEXT NOT NULL UNIQUE);
     CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
-      password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('administrator','institution','student')),
+      password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('administrator','institution','student','verifier')),
       institution_id INTEGER REFERENCES institutions(id), wallet TEXT,
-      CHECK((role='administrator' AND institution_id IS NULL AND wallet IS NOT NULL) OR (role IN ('institution','student') AND institution_id IS NOT NULL)));
+      CHECK((role='verifier' AND institution_id IS NULL AND wallet IS NULL) OR (role='administrator' AND institution_id IS NULL AND wallet IS NOT NULL) OR (role IN ('institution','student') AND institution_id IS NOT NULL)));
     CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
       csrf TEXT NOT NULL, expires INTEGER NOT NULL, verified_wallet TEXT, wallet_expires INTEGER,
       challenge TEXT, challenge_expires INTEGER);
@@ -38,6 +38,23 @@ export function openDatabase(file = process.env.DATABASE_PATH || fileURLToPath(n
       certificate_id TEXT REFERENCES certificates(id), wallet TEXT NOT NULL, registry TEXT NOT NULL, instance TEXT NOT NULL,
       data TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', tx_hash TEXT);
   `);
+  // Rebuild the constrained table without changing IDs or dependent records.
+  const userSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='users'").get().sql;
+  if (!userSchema.includes("'verifier'")) {
+    db.exec('PRAGMA foreign_keys=OFF; BEGIN');
+    try {
+      db.exec(userSchema.replace('CREATE TABLE users', 'CREATE TABLE users_new')
+        .replace("'administrator','institution','student'", "'administrator','institution','student','verifier'")
+        .replace("CHECK((role='administrator'", "CHECK((role='verifier' AND institution_id IS NULL AND wallet IS NULL) OR (role='administrator'"));
+      db.exec('INSERT INTO users_new SELECT * FROM users; DROP TABLE users; ALTER TABLE users_new RENAME TO users');
+      if (db.prepare('PRAGMA foreign_key_check').all().length) throw Error('User migration failed foreign-key validation.');
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+    finally { db.exec('PRAGMA foreign_keys=ON'); }
+  }
+  const columns = db.prepare('PRAGMA table_info(certificates)').all().map(c => c.name);
+  if (!columns.includes('course')) db.exec("ALTER TABLE certificates ADD COLUMN course TEXT NOT NULL DEFAULT ''");
+  db.exec('CREATE INDEX IF NOT EXISTS certificates_hash ON certificates(document_hash)');
   if (process.env.NODE_ENV === 'production' && db.prepare("SELECT value FROM settings WHERE key='local_seed'").get()) {
     db.close(); throw Error('A seeded demonstration database cannot be used in production.');
   }

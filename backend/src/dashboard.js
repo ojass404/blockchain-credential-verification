@@ -1,3 +1,6 @@
+import QRCode from 'qrcode';
+import multer from 'multer';
+import { managedProof, managedSigningEnabled, executeManagedAction } from './managed-signing.js';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { getAddress, hexlify, randomBytes } from 'ethers';
@@ -9,6 +12,8 @@ import { chainContext, sameDeployment } from './chain-actions.js';
 export function dashboardRouter(db) {
   const router = Router();
   router.use(sessionMiddleware(db));
+  router.use((req, _res, next) => { requireRole(req.account, 'administrator', 'institution', 'student'); next(); });
+  router.use(managedProof(db));
   router.use(rateLimit({ windowMs: 60000, limit: 60, message: { error: 'Too many dashboard requests. Try again later.' } }));
   function certificate(req) {
     const row = db.prepare('SELECT * FROM certificates WHERE id=?').get(req.params.id);
@@ -21,26 +26,53 @@ export function dashboardRouter(db) {
     db.prepare('INSERT INTO actions(id,user_id,kind,certificate_id,wallet,registry,instance,data) VALUES(?,?,?,?,?,?,?,?)').run(id, req.account.id, kind, certificateId, req.account.wallet, deployment.address, deployment.instanceId, data);
     return { actionId: id, to: deployment.address, data, chainId: deployment.chainId, wallet: req.account.wallet };
   }
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const u = req.account;
     const where = u.role === 'administrator' ? '' : u.role === 'institution' ? ' WHERE c.institution_id=?' : ' WHERE c.student_id=?';
-    const certificates = db.prepare(`SELECT c.id,c.institution_id,c.student_id,c.status,c.document_hash,c.tx_hash,u.name AS student_name,i.name AS institution_name FROM certificates c JOIN users u ON u.id=c.student_id JOIN institutions i ON i.id=c.institution_id${where}`).all(...(where ? [u.role === 'institution' ? u.institution_id : u.id] : []));
+    const certificates = db.prepare(`SELECT c.id,c.institution_id,c.student_id,c.status,c.document_hash,c.tx_hash,c.course,u.name AS student_name,i.name AS institution_name FROM certificates c JOIN users u ON u.id=c.student_id JOIN institutions i ON i.id=c.institution_id${where}`).all(...(where ? [u.role === 'institution' ? u.institution_id : u.id] : []));
     const institutions = db.prepare('SELECT * FROM institutions' + (u.role === 'administrator' ? '' : ' WHERE id=?')).all(...(u.role === 'administrator' ? [] : [u.institution_id]));
     const users = u.role === 'student' ? [] : db.prepare(`SELECT ${userFields} FROM users u LEFT JOIN institutions i ON i.id=u.institution_id${u.role === 'administrator' ? '' : " WHERE u.institution_id=? AND u.role='student'"}`).all(...(u.role === 'administrator' ? [] : [u.institution_id]));
-    const actions = db.prepare("SELECT id,kind,certificate_id,state,tx_hash FROM actions WHERE user_id=? AND state='pending'").all(u.id);
-    res.json({ certificates, institutions, users, actions });
+    const actions = db.prepare('SELECT id,kind,certificate_id,state,tx_hash FROM actions WHERE user_id=? ORDER BY rowid DESC LIMIT 100').all(u.id);
+    let registryAvailable = true;
+    try { await chainContext(async ({ registry, deployment }) => {
+      for (const i of institutions) i.approved = await registry.approvedInstitutions(i.wallet);
+      for (const c of certificates) {
+        const stored = db.prepare('SELECT registry,instance FROM certificates WHERE id=?').get(c.id);
+        if (stored.registry !== deployment.address || stored.instance !== deployment.instanceId) { c.status='archived'; continue; }
+        const live = await registry.getCredential(c.id);
+        c.status = live.exists ? (live.revoked ? 'revoked' : 'active') : 'pending';
+      }
+    }); } catch { registryAvailable = false; }
+    res.json({ certificates, institutions, users, actions, registryAvailable, managedSigning: managedSigningEnabled(db) });
   });
-  router.post('/institutions', (req, res) => {
+  router.post('/institutions', async (req, res) => {
     requireRole(req.account, 'administrator');
     if (typeof req.body.name !== 'string' || !req.body.name.trim() || req.body.name.length > 120) throw new HttpError(400, 'Enter an institution name (up to 120 characters).');
-    let wallet; try { wallet = getAddress(req.body.wallet); } catch { throw new HttpError(400, 'Enter a valid institution wallet.'); }
+    let wallet;
+    if (!req.body.wallet && managedSigningEnabled(db)) {
+      wallet = await chainContext(async ({ provider, registry }) => {
+        const used = new Set(db.prepare('SELECT wallet FROM institutions').all().map(i=>i.wallet));
+        used.add(await registry.administrator());
+        const available = (await provider.listAccounts()).find(s=>!used.has(s.address));
+        if (!available) throw new HttpError(409,'All local institution accounts are allocated.');
+        return available.address;
+      });
+    } else { try { wallet = getAddress(req.body.wallet); } catch { throw new HttpError(400, 'An institution signing account must be configured by the administrator.'); } }
     if (wallet === '0x0000000000000000000000000000000000000000' || db.prepare('SELECT id FROM institutions WHERE wallet=?').get(wallet)) throw new HttpError(409, 'Wallet is zero or already assigned.');
     const result = db.prepare('INSERT INTO institutions(name,wallet) VALUES(?,?)').run(req.body.name.trim(), wallet);
     res.status(201).json({ id: Number(result.lastInsertRowid) });
   });
   router.post('/users', async (req, res) => {
-    requireRole(req.account, 'administrator');
-    const { name, email, password, role, institutionId } = req.body;
+    requireRole(req.account, 'administrator', 'institution');
+    const { name, email, password } = req.body;
+    let { role, institutionId } = req.body;
+    if (req.account.role === 'institution') {
+      if ((role !== undefined && role !== 'student') || (institutionId !== undefined && institutionId !== req.account.institution_id)) {
+        throw new HttpError(403, 'You can create student accounts only for your own institution.');
+      }
+      role = 'student';
+      institutionId = req.account.institution_id;
+    }
     if (!['institution','student'].includes(role) || typeof name !== 'string' || !name.trim() || name.length > 120 || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || typeof password !== 'string' || password.length < 12 || password.length > 256) throw new HttpError(400, 'Provide name, email, role and a password of 12–256 characters.');
     if (!Number.isSafeInteger(institutionId) || !db.prepare('SELECT id FROM institutions WHERE id=?').get(institutionId)) throw new HttpError(400, 'Choose an existing institution.');
     if (db.prepare('SELECT id FROM users WHERE email=?').get(email.toLowerCase().trim())) throw new HttpError(409, 'Email is already registered.');
@@ -52,13 +84,22 @@ export function dashboardRouter(db) {
     const row = certificate(req);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="certificate-${row.id.slice(2,14)}.pdf"` }).send(Buffer.from(row.pdf));
   });
+  router.get('/certificates/:id/share', async (req, res) => {
+    const row = certificate(req);
+    const url = `${process.env.PUBLIC_ORIGIN || 'http://127.0.0.1:5173'}/verify?credential=${row.id}`;
+    res.json({ url, qr: await QRCode.toDataURL(url, { width: 240, margin: 2 }) });
+  });
+  router.post('/actions/:id/execute', async (req, res) => { requireRole(req.account, 'institution', 'administrator'); requireWallet(req); res.json(await executeManagedAction(db,req)); });
+  const issuanceUpload = multer({ storage:multer.memoryStorage(), limits:{ fileSize:5*1024*1024,files:1,fields:1,fieldSize:160,parts:3 } });
   router.post('/students/:studentId/issue', (req, _res, next) => {
     requireRole(req.account, 'institution'); requireWallet(req);
     const student = db.prepare("SELECT id FROM users WHERE id=? AND role='student' AND institution_id=?").get(req.params.studentId, req.account.institution_id);
     if (!student) throw new HttpError(404, 'Student not found in your institution.');
     req.student = student; next();
-  }, upload.single('document'), async (req, res) => {
+  }, issuanceUpload.single('document'), async (req, res) => {
     try {
+      const course = req.body?.course || '';
+      if (typeof course !== 'string' || course.length > 160 || Object.keys(req.body || {}).some(k => k !== 'course')) throw new HttpError(400,'Provide only a qualification title (up to 160 characters).');
       let hash; try { hash = pdfHash(req.file); } catch (e) { throw new HttpError(400, e.message); }
       const prepared = await chainContext(async ({ deployment, registry }) => {
         if (!(await registry.approvedInstitutions(req.account.wallet))) throw new HttpError(403, 'Your institution wallet is not approved by the contract administrator.');
@@ -66,6 +107,7 @@ export function dashboardRouter(db) {
         db.exec('BEGIN');
         try {
           db.prepare('INSERT INTO certificates(id,institution_id,student_id,document_hash,pdf,registry,instance) VALUES(?,?,?,?,?,?,?)').run(id, req.account.institution_id, req.student.id, hash, req.file.buffer, deployment.address, deployment.instanceId);
+          db.prepare('UPDATE certificates SET course=? WHERE id=?').run(course.trim(),id);
           const action = saveAction(req, deployment, 'issue', registry.interface.encodeFunctionData('issueCredential', [id, hash]), id);
           db.exec('COMMIT'); return { ...action, credentialId: id };
         } catch (e) { db.exec('ROLLBACK'); throw e; }

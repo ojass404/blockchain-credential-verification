@@ -38,6 +38,6 @@ export async function lookupCredential(id, file = deploymentPath) {
   try {
     await validateDeployment(provider, d);
     const c = await new Contract(d.address, d.abi, provider).getCredential(id);
-    return { exists: c.exists, revoked: c.revoked, issuer: c.issuer, issuedAt: c.issuedAt.toString(), documentHash: c.documentHash, chainId: d.chainId, registryAddress: d.address };
+    return { exists: c.exists, revoked: c.revoked, issuer: c.issuer, issuedAt: c.issuedAt.toString(), documentHash: c.documentHash, chainId: d.chainId, registryAddress: d.address, instance: d.instanceId };
   } finally { provider.destroy(); }
 }

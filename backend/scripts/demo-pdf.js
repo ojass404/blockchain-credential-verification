@@ -3,6 +3,13 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { Contract, randomBytes, hexlify, sha256 } from 'ethers';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readDeployment, makeProvider, validateDeployment } from '../src/deployment.js';
+if(process.env.NODE_ENV==='production')throw Error('Local demonstration only.');
+const {accounts}=JSON.parse(await readFile(new URL('../../.local/seed-accounts.json',import.meta.url)));
+const account=accounts.find(a=>a.role==='verifier')||accounts[0];
+const login=await fetch('http://127.0.0.1:3001/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:account.email,password:account.password})});
+assert.equal(login.status,200,'Seed local accounts before running this demo.');
+const cookie=login.headers.get('set-cookie').split(';')[0],{csrf}=await login.json();
+const headers={Cookie:cookie,'X-CSRF-Token':csrf};
 const d = await readDeployment();
 const p = makeProvider(d.rpcUrl);
 const folder = new URL('../../.local/fixtures/', import.meta.url);
@@ -28,7 +35,7 @@ try {
   const evidence = [];
   async function check(id, bytes, status, matches) {
     const form = new FormData(); form.append('document', new Blob([bytes], { type: 'application/pdf' }), 'certificate.pdf');
-    const response = await fetch(`http://127.0.0.1:3001/api/verify/${id}`, { method: 'POST', body: form });
+    const response = await fetch(`http://127.0.0.1:3001/api/verify/${id}`, { method: 'POST', headers, body: form });
     const result = await response.json();
     assert.equal(response.status, 200, JSON.stringify(result));
     assert.equal(result.status, status); assert.equal(result.fileMatches, matches); assert.equal(result.fileChecked, true);
@@ -43,4 +50,4 @@ try {
   await check(activeId, original, 'active', true);
   await writeFile(new URL('../../.local/demo.json', import.meta.url), JSON.stringify({ activeId, revokedId, originalHash: sha256(original), evidence }, null, 2));
   console.log(`Active ID: ${activeId}\nRevoked ID: ${revokedId}\nPDFs: ${folder.pathname}`);
-} finally { p.destroy(); }
+} finally { p.destroy(); await fetch('http://127.0.0.1:3001/api/auth/logout',{method:'POST',headers}); }
