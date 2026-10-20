@@ -1,10 +1,13 @@
+let headers;
+const fetch=(url,options={})=>globalThis.fetch(url,{...options,headers:{...headers,...options.headers}});
+import { verifierSession } from './session-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/app.js';
 import { openDatabase } from '../src/database.js';
 import { managedSigningEnabled } from '../src/managed-signing.js';
 async function server(findFile, run) {
-  const db=openDatabase(':memory:');
+  const db=openDatabase(':memory:');headers=verifierSession(db);
   const s=createApp({db,findFile}).listen(0,'127.0.0.1');await new Promise(r=>s.once('listening',r));
   try{await run(`http://127.0.0.1:${s.address().port}/api/verify-file`);}finally{await new Promise(r=>s.close(r));db.close();}
 }

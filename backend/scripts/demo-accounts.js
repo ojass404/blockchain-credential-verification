@@ -49,8 +49,8 @@ try {
   const r=await ia.request(`/dashboard/certificates/${a}/revoke`,'POST',{});const action=await r.json(); assert.equal(r.status,200);
   const tx=await (await p.getSigner(ia.wallet)).sendTransaction({to:action.to,data:action.data});await tx.wait();
   assert.equal((await ia.request(`/dashboard/actions/${action.actionId}/confirm`,'POST',{txHash:tx.hash})).status,200);
-  assert.equal((await (await fetch(base+`/verify/${a}`)).json()).status,'revoked');
-  assert.equal((await (await fetch(base+`/verify/${b}`)).json()).status,'active');
+  assert.equal((await (await ia.request(`/verify/${a}`)).json()).status,'revoked');
+  assert.equal((await (await ib.request(`/verify/${b}`)).json()).status,'active');
   console.log('PASS authorized issuance/revocation and unauthenticated public verification');
   console.log(`Synthetic student A certificate: ${a}\nSynthetic student B certificate: ${b}`);
   for (const user of [ia,ib,sa,sb]) await user.request('/auth/logout','POST',{});

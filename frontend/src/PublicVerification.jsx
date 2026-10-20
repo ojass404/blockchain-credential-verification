@@ -8,7 +8,7 @@ const descriptions = {
   active:'This credential is active. Upload the certificate PDF to check that its exact contents match.',
   not_found:'The shared credential is not present in the current registry.'
 };
-export function PublicVerification() {
+export function PublicVerification({csrf}) {
   const context=new URLSearchParams(location.search).get('credential');
   const [file,setFile]=useState(null), [result,setResult]=useState(null), [error,setError]=useState(''), [busy,setBusy]=useState(false), [drag,setDrag]=useState(false);
   const sequence=useRef(0), controller=useRef(null), input=useRef(null);
@@ -21,7 +21,8 @@ export function PublicVerification() {
     const timeout=setTimeout(()=>ac.abort(),20000);
     try {
       const body=new FormData();body.append('document',selected);
-      const r=await fetch(context?`/api/verify/${encodeURIComponent(context)}`:'/api/verify-file',{method:'POST',body,signal:ac.signal});
+      const r=await fetch(context?`/api/verify/${encodeURIComponent(context)}`:'/api/verify-file',{method:'POST',body,headers:{'X-CSRF-Token':csrf},signal:ac.signal});
+      if(r.status===401){location.replace('/login/verifier'+location.search);return;}
       const data=await r.json();
       if(current!==sequence.current)return;
       if(!r.ok && data.status!=='not_found')throw Error(data.error || 'Verification is temporarily unavailable.');
@@ -34,7 +35,7 @@ export function PublicVerification() {
     return ()=>controller.current?.abort();
   },[]);
   return <main className="public-main"><div className="page-intro"><p className="eyebrow">PUBLIC VERIFICATION</p><h1>A document. A verifiable record.</h1><p>Check an educational credential against its issuing institution’s registry.<br className="desktop-only"/> Upload the original PDF. We’ll take care of the rest.</p></div>
-    <div className="verification-grid"><div><section className="panel upload-panel"><div className="panel-title"><h2>Verify a certificate</h2><span className="small-tag">No sign-in required</span></div>
+    <div className="verification-grid"><div><section className="panel upload-panel"><div className="panel-title"><h2>Verify a certificate</h2><span className="small-tag">Authenticated verification</span></div>
       <div className={`dropzone ${drag?'dragging':''}`} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);if(e.dataTransfer.files.length!==1){reset();setError('Choose one PDF at a time.');return;}verify(e.dataTransfer.files[0]);}}>
         <svg width="40" height="44" viewBox="0 0 40 44" fill="none" aria-hidden="true"><path d="M8 2h16l9 9v30H8zM24 2v10h9M14 22h13M14 28h13M14 34h8" stroke="currentColor" strokeWidth="1.6"/></svg>
         <h3>{file?file.name:'Drop your certificate here'}</h3><p>{file?`${(file.size/1024).toFixed(1)} KB · PDF document`:'PDF format · Maximum file size 5 MiB'}</p><label className="button primary file-button">{file?'Choose another PDF':'Choose PDF'}<input ref={input} type="file" accept=".pdf,application/pdf" aria-label="Certificate PDF" onChange={e=>verify(e.target.files?.[0])}/></label>

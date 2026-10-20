@@ -1,6 +1,6 @@
 # Blockchain Credential Verification
 
-Academic prototype for educational credential verification in India. The public React screen reads a local Solidity registry through Express and automatically looks up the exact SHA-256 of an uploaded PDF. No verifier account or wallet is required. This project has no government or university endorsement.
+Academic prototype for educational credential verification in India. The public React screen reads a local Solidity registry through Express and automatically looks up the exact SHA-256 of an uploaded PDF. Verification now requires an authenticated account; no wallet is required. This project has no government or university endorsement.
 
 ## Implemented
 
@@ -50,7 +50,7 @@ Use separate terminals for the long-running processes. Before starting another p
 
    API: `http://127.0.0.1:3001`. `npm run dev --prefix backend` enables watching. Health checks report process health, not blockchain readiness.
 
-4. Issue synthetic PDFs and execute the real API lifecycle:
+4. Run `npm run seed:local --prefix backend` before the demos. Issue synthetic PDFs and execute the real API lifecycle:
 
    ```sh
    npm run demo:pdf --prefix backend
@@ -68,7 +68,7 @@ Use separate terminals for the long-running processes. Before starting another p
 
 ## API contract
 
-- `POST /api/verify-file`: multipart `document`; finds matching on-chain issuance events, checks current revocation status, and returns `valid`, `revoked`, or `unregistered`. Infrastructure failures return 503. No login or ID is required.
+- `POST /api/verify-file`: multipart `document`; finds matching on-chain issuance events, checks current revocation status, and returns `valid`, `revoked`, or `unregistered`. Infrastructure failures return 503. Login is required; no ID is required.
 - `GET /api/health`: process liveness.
 - `POST /api/documents/hash`: multipart `document`; returns SHA-256 without claiming a blockchain check.
 - `GET /api/verify/:id`: registry lookup; `fileChecked: false`, `fileMatches: null`.
@@ -168,3 +168,13 @@ The second command uses **local-only CLI signing**, through the original externa
 Sessions use random opaque cookies (HttpOnly, SameSite=Strict; Secure in production), with only their hashes stored in SQLite. Sessions expire after eight hours and logout invalidates the database record. Mutating authenticated routes require a session CSRF token; cross-origin mutations are rejected. Passwords use salted scrypt, and login/dashboard requests are rate limited. Private PDFs are stored as SQLite BLOBs, never served as static files. Public comparison uploads continue to be processed in memory without persistence.
 
 This remains a local prototype: password reset/change, MFA, account disablement, audit-log retention, database encryption/backups, pagination/storage quotas, production provisioning and deployment are not implemented. Development accounts and the demonstration database must never become production accounts. See [account-security test evidence](docs/testing/2026-10-16-accounts.md).
+
+## Verification access update — 20 October 2026
+
+Verification now requires login, including both ID-based and PDF-only backend endpoints. `/verify` redirects anonymous visitors to `/login/verifier`. Any authenticated account can verify, while the verifier role has no private dashboard, PDF download, issuance, revocation or wallet access. Mutating verification requests require the session CSRF token. Shared QR links retain their record context across verifier login.
+
+The local administrator and first student credentials were updated in place, and a government verifier account was added. Their requested credentials and the unchanged institution/second-student credentials are stored only in ignored `.local/seed-accounts.json`; no passwords are committed. These local changes preserve existing IDs, memberships and certificate ownership. Production continues to reject the seeded database. Older test evidence describes the prior anonymous-verification behavior.
+
+## Institution student provisioning
+
+Institution operators can open **Students → Create a student account**, enter a name, email and initial password (12–256 characters), and create a student in their own institution. The backend derives the student role and institution from the authenticated operator, rejecting attempts to assign another institution or a privileged role. Students cannot create accounts. Duplicate emails are rejected; passwords are hashed. New students appear in the institution directory and issuance selector and can sign in through `/login/student`.

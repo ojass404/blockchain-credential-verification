@@ -33,7 +33,7 @@ export function accountRouter(db) {
     const valid = await checkPassword(password, user?.password_hash || dummyPassword);
     if (!user || !valid) throw new HttpError(401, 'Email or password is incorrect.');
     const portal = req.body.portal;
-    if (portal && (!['administrator','institution','student'].includes(portal) || user.role !== portal)) throw new HttpError(403, 'This account belongs to a different portal. Use the sign-in page for your account type.');
+    if (portal && (!['administrator','institution','student','verifier'].includes(portal) || user.role !== portal)) throw new HttpError(403, 'This account belongs to a different portal. Use the sign-in page for your account type.');
     db.prepare('DELETE FROM sessions WHERE expires<=?').run(Date.now());
     const raw = token(), csrf = token();
     const old = /(?:^|;\s*)credential_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];

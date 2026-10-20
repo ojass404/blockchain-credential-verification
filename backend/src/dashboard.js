@@ -12,6 +12,7 @@ import { chainContext, sameDeployment } from './chain-actions.js';
 export function dashboardRouter(db) {
   const router = Router();
   router.use(sessionMiddleware(db));
+  router.use((req, _res, next) => { requireRole(req.account, 'administrator', 'institution', 'student'); next(); });
   router.use(managedProof(db));
   router.use(rateLimit({ windowMs: 60000, limit: 60, message: { error: 'Too many dashboard requests. Try again later.' } }));
   function certificate(req) {
@@ -62,8 +63,16 @@ export function dashboardRouter(db) {
     res.status(201).json({ id: Number(result.lastInsertRowid) });
   });
   router.post('/users', async (req, res) => {
-    requireRole(req.account, 'administrator');
-    const { name, email, password, role, institutionId } = req.body;
+    requireRole(req.account, 'administrator', 'institution');
+    const { name, email, password } = req.body;
+    let { role, institutionId } = req.body;
+    if (req.account.role === 'institution') {
+      if ((role !== undefined && role !== 'student') || (institutionId !== undefined && institutionId !== req.account.institution_id)) {
+        throw new HttpError(403, 'You can create student accounts only for your own institution.');
+      }
+      role = 'student';
+      institutionId = req.account.institution_id;
+    }
     if (!['institution','student'].includes(role) || typeof name !== 'string' || !name.trim() || name.length > 120 || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || typeof password !== 'string' || password.length < 12 || password.length > 256) throw new HttpError(400, 'Provide name, email, role and a password of 12–256 characters.');
     if (!Number.isSafeInteger(institutionId) || !db.prepare('SELECT id FROM institutions WHERE id=?').get(institutionId)) throw new HttpError(400, 'Choose an existing institution.');
     if (db.prepare('SELECT id FROM users WHERE email=?').get(email.toLowerCase().trim())) throw new HttpError(409, 'Email is already registered.');

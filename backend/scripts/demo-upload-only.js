@@ -15,7 +15,7 @@ async function createPdf(qualification){const doc=await PDFDocument.create(),pag
 const original=await createPdf('Bachelor of Technology'),edited=await createPdf('Master of Technology');
 await writeFile(new URL('original.pdf',folder),original);await writeFile(new URL('edited.pdf',folder),edited);
 function upload(bytes,course){const f=new FormData();f.append('document',new Blob([bytes]),'synthetic.pdf');if(course)f.append('course',course);return f;}
-async function verify(bytes,expected){const r=await fetch(base+'/verify-file',{method:'POST',body:upload(bytes)});const b=await r.json();assert.equal(r.status,200,JSON.stringify(b));assert.equal(b.status,expected,JSON.stringify(b));return b;}
+async function verify(bytes,expected){const r=await request('/verify-file','POST',upload(bytes));const b=await r.json();assert.equal(r.status,200,JSON.stringify(b));assert.equal(b.status,expected,JSON.stringify(b));return b;}
 async function finish(action){const r=await request(`/dashboard/actions/${action.actionId}/execute`,'POST',{});const sent=await r.json();assert.equal(r.status,200,JSON.stringify(sent));const confirmation=await request(`/dashboard/actions/${action.actionId}/confirm`,'POST',sent);assert.equal(confirmation.status,200,await confirmation.text());}
 try{
   await verify(original,'unregistered');console.log('PASS unregistered PDF is not reported valid');
@@ -37,7 +37,7 @@ try{
   await finish(action);const valid=await verify(original,'valid');assert.equal(valid.records.length,1);assert.equal(valid.records[0].institutionName,'Synthetic Institute A');console.log('PASS register and verify original PDF without a wallet extension or typed ID');
   await verify(edited,'unregistered');console.log('PASS edited file has no exact registered match');
   const qr=await(await request(`/dashboard/certificates/${action.credentialId}/share`)).json();assert.match(qr.qr,/^data:image\/png;base64,/);assert.match(qr.url,new RegExp(action.credentialId));
-  const contextual=await fetch(base+`/verify/${action.credentialId}`,{method:'POST',body:upload(edited)});assert.equal((await contextual.json()).fileMatches,false);console.log('PASS shared record detects edited-PDF mismatch and QR link is generated');
+  const contextual=await request(`/verify/${action.credentialId}`,'POST',upload(edited));assert.equal((await contextual.json()).fileMatches,false);console.log('PASS shared record detects edited-PDF mismatch and QR link is generated');
   const revoked=await request(`/dashboard/certificates/${action.credentialId}/revoke`,'POST',{});assert.equal(revoked.status,200);await finish(await revoked.json());await verify(original,'revoked');console.log('PASS revoked exact file detected through upload alone');
   // Leave a second unique, active document for the UI demonstration.
   const active=await createPdf('Diploma in Computer Applications');await writeFile(new URL('active.pdf',folder),active);
